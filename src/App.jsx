@@ -1,0 +1,381 @@
+import { useState, useEffect, useCallback } from "react";
+
+const START_DATE = new Date("2026-02-22");
+
+const SUBJECTS = [
+  { id: "math",    label: "Math",    target: 250, examDate: new Date("2026-05-14"), color: "#60a5fa", dim: "#1e3a5f" },
+  { id: "physics", label: "Physics", target: 50,  examDate: new Date("2026-04-28"), color: "#34d399", dim: "#0f3328" },
+  { id: "econ",    label: "Econ",    target: 50,  examDate: new Date("2026-05-12"), color: "#fbbf24", dim: "#3d2d00" },
+  { id: "english", label: "English", target: 15,  examDate: new Date("2026-05-07"), color: "#f87171", dim: "#3d0f0f" },
+];
+
+const WEEKLY_RATE = { math: 22, physics: 4, econ: 5, english: 1.5 };
+const NO_WORKOUT_DAYS = [1, 3]; // Mon, Wed = heavy study days
+
+function weeksElapsed() {
+  return Math.max(0, (Date.now() - START_DATE.getTime()) / (1000 * 60 * 60 * 24 * 7));
+}
+
+function daysUntil(date) {
+  return Math.max(0, Math.ceil((date.getTime() - Date.now()) / (1000 * 60 * 60 * 24)));
+}
+
+function todayKey() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+function getTodayWorkout() {
+  return !NO_WORKOUT_DAYS.includes(new Date().getDay());
+}
+
+export default function App() {
+  const [logs, setLogs] = useState(() => {
+    try { return JSON.parse(localStorage.getItem("ib-logs") || "{}"); } catch { return {}; }
+  });
+  const [workout, setWorkout] = useState(() => {
+    try { return JSON.parse(localStorage.getItem("ib-workout") || "{}"); } catch { return {}; }
+  });
+  const [input, setInput] = useState({ math: "", physics: "", econ: "", english: "" });
+  const [saved, setSaved] = useState(false);
+  const [activeTab, setActiveTab] = useState("log");
+
+  const persist = useCallback((newLogs, newWorkout) => {
+    localStorage.setItem("ib-logs", JSON.stringify(newLogs));
+    localStorage.setItem("ib-workout", JSON.stringify(newWorkout));
+    setSaved(true);
+    setTimeout(() => setSaved(false), 1500);
+  }, []);
+
+  function getTotalHours(id) {
+    return Object.values(logs).reduce((s, d) => s + (parseFloat(d[id]) || 0), 0);
+  }
+
+  function logToday() {
+    const key = todayKey();
+    const entry = { ...logs[key] };
+    let changed = false;
+    SUBJECTS.forEach(s => {
+      const v = parseFloat(input[s.id]);
+      if (!isNaN(v) && v > 0) { entry[s.id] = (parseFloat(entry[s.id]) || 0) + v; changed = true; }
+    });
+    if (!changed) return;
+    const newLogs = { ...logs, [key]: entry };
+    setLogs(newLogs);
+    setInput({ math: "", physics: "", econ: "", english: "" });
+    persist(newLogs, workout);
+  }
+
+  function toggleWorkout() {
+    const key = todayKey();
+    const nw = { ...workout, [key]: !workout[key] };
+    setWorkout(nw);
+    persist(logs, nw);
+  }
+
+  const todayHasWorkout = getTodayWorkout();
+  const todayWorkoutDone = workout[todayKey()] || false;
+  const weeksGone = weeksElapsed();
+  const workoutDays = Object.values(workout).filter(Boolean).length;
+
+  const safeAreaTop = "env(safe-area-inset-top)";
+
+  return (
+    <div style={{
+      background: "#080c14",
+      minHeight: "100vh",
+      minHeight: "100dvh",
+      fontFamily: "'DM Mono', 'Courier New', monospace",
+      color: "#e2e8f0",
+      paddingBottom: 80,
+    }}>
+      <style>{`
+        @import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@300;400;500&family=Syne:wght@700;800&display=swap');
+        * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+        body { background: #080c14; }
+        ::-webkit-scrollbar { width: 0; }
+        input[type=number]::-webkit-inner-spin-button,
+        input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; }
+        input[type=number] { -moz-appearance: textfield; }
+        .tab-btn {
+          cursor: pointer; flex: 1; padding: 10px 4px; border: none;
+          font-family: inherit; font-size: 11px; letter-spacing: 0.08em;
+          transition: all 0.2s; background: transparent;
+        }
+        .tab-active { color: #60a5fa; border-bottom: 2px solid #60a5fa; }
+        .tab-inactive { color: #334155; border-bottom: 2px solid transparent; }
+        .log-btn {
+          background: #1d4ed8; color: white; border: none; border-radius: 10px;
+          padding: 14px; font-family: inherit; font-size: 14px; cursor: pointer;
+          width: 100%; letter-spacing: 0.06em; transition: background 0.2s;
+          -webkit-appearance: none;
+        }
+        .log-btn:active { background: #1e40af; }
+        .input-field {
+          background: #0f172a; border: 1px solid #1e293b; color: #e2e8f0;
+          border-radius: 8px; padding: 12px 40px 12px 14px;
+          font-family: inherit; font-size: 16px; width: 100%;
+          outline: none; -webkit-appearance: none; appearance: none;
+        }
+        .input-field:focus { border-color: #3b82f6; }
+        .card {
+          background: #0d1626; border: 1px solid #1a2744;
+          border-radius: 14px; padding: 18px; margin-bottom: 12px;
+        }
+        .pill {
+          border-radius: 6px; padding: 4px 12px; font-size: 12px; display: inline-block;
+        }
+        .workout-btn {
+          border-radius: 8px; padding: 10px 18px; font-family: inherit;
+          font-size: 13px; cursor: pointer; border: none; transition: all 0.2s;
+          -webkit-appearance: none; white-space: nowrap;
+        }
+        .workout-btn:active { opacity: 0.8; }
+      `}</style>
+
+      {/* Header */}
+      <div style={{
+        background: "#080c14",
+        borderBottom: "1px solid #1a2744",
+        padding: `calc(${safeAreaTop} + 20px) 20px 0`,
+        position: "sticky", top: 0, zIndex: 10,
+      }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+          <div>
+            <div style={{ fontFamily: "'Syne', sans-serif", fontSize: 22, fontWeight: 800, color: "#fff", letterSpacing: "-0.02em" }}>
+              IB GRIND
+            </div>
+            <div style={{ color: "#334155", fontSize: 10, letterSpacing: "0.1em" }}>MAY 2026</div>
+          </div>
+          {saved && <span style={{ color: "#34d399", fontSize: 12 }}>✓ SAVED</span>}
+        </div>
+        <div style={{ display: "flex" }}>
+          {["log", "progress", "history"].map(t => (
+            <button key={t} className={`tab-btn ${activeTab === t ? "tab-active" : "tab-inactive"}`}
+              onClick={() => setActiveTab(t)}>
+              {t.toUpperCase()}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div style={{ padding: "16px 16px 0" }}>
+
+        {/* ─── LOG ─── */}
+        {activeTab === "log" && (
+          <>
+            <div style={{ color: "#334155", fontSize: 11, letterSpacing: "0.1em", marginBottom: 14 }}>
+              {new Date().toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "short" }).toUpperCase()}
+            </div>
+
+            {/* Today mini-summary */}
+            <div className="card">
+              <div style={{ fontSize: 10, color: "#475569", letterSpacing: "0.1em", marginBottom: 10 }}>TODAY SO FAR</div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 8 }}>
+                {SUBJECTS.map(s => {
+                  const h = parseFloat(logs[todayKey()]?.[s.id]) || 0;
+                  return (
+                    <div key={s.id} style={{ textAlign: "center" }}>
+                      <div style={{ fontSize: 20, fontWeight: 500, color: s.color }}>{h.toFixed(1)}<span style={{ fontSize: 11 }}>h</span></div>
+                      <div style={{ fontSize: 10, color: "#475569" }}>{s.label}</div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Input */}
+            <div className="card">
+              <div style={{ fontSize: 10, color: "#475569", letterSpacing: "0.1em", marginBottom: 14 }}>LOG SESSION</div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 14 }}>
+                {SUBJECTS.map(s => (
+                  <div key={s.id}>
+                    <div style={{ fontSize: 10, color: s.color, marginBottom: 6, letterSpacing: "0.05em" }}>{s.label.toUpperCase()}</div>
+                    <div style={{ position: "relative" }}>
+                      <input
+                        className="input-field"
+                        type="number"
+                        inputMode="decimal"
+                        min="0"
+                        step="0.25"
+                        placeholder="0.0"
+                        value={input[s.id]}
+                        onChange={e => setInput(v => ({ ...v, [s.id]: e.target.value }))}
+                      />
+                      <span style={{ position: "absolute", right: 14, top: "50%", transform: "translateY(-50%)", color: "#334155", fontSize: 13 }}>h</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <button className="log-btn" onClick={logToday}>+ ADD TO LOG</button>
+            </div>
+
+            {/* Workout */}
+            <div className="card" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
+              <div>
+                <div style={{ fontSize: 14, color: todayHasWorkout ? "#e2e8f0" : "#334155" }}>
+                  {todayHasWorkout ? "💪 45min Workout" : "🧠 Rest Day"}
+                </div>
+                <div style={{ fontSize: 11, color: "#475569", marginTop: 3 }}>
+                  {todayHasWorkout
+                    ? (todayWorkoutDone ? "Done! 🔥" : "Not logged yet")
+                    : "Mon & Wed = no workout"}
+                </div>
+              </div>
+              {todayHasWorkout && (
+                <button
+                  className="workout-btn"
+                  onClick={toggleWorkout}
+                  style={{
+                    background: todayWorkoutDone ? "#064e3b" : "#1e293b",
+                    color: todayWorkoutDone ? "#34d399" : "#64748b",
+                    border: `1px solid ${todayWorkoutDone ? "#065f46" : "#253347"}`,
+                  }}>
+                  {todayWorkoutDone ? "✓ DONE" : "MARK DONE"}
+                </button>
+              )}
+            </div>
+          </>
+        )}
+
+        {/* ─── PROGRESS ─── */}
+        {activeTab === "progress" && (
+          <>
+            <div style={{ color: "#334155", fontSize: 11, letterSpacing: "0.1em", marginBottom: 14 }}>
+              WEEK {Math.ceil(weeksGone)} · {weeksGone.toFixed(1)} WEEKS ELAPSED
+            </div>
+
+            {SUBJECTS.map(s => {
+              const done = getTotalHours(s.id);
+              const pct = Math.min(100, (done / s.target) * 100);
+              const daysLeft = daysUntil(s.examDate);
+              const weeksLeft = daysLeft / 7;
+              const expected = weeksGone * WEEKLY_RATE[s.id];
+              const delta = done - expected;
+              const remaining = Math.max(0, s.target - done);
+              const neededPerWeek = weeksLeft > 0 ? remaining / weeksLeft : 0;
+
+              return (
+                <div key={s.id} className="card" style={{ borderColor: s.dim }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 12 }}>
+                    <div>
+                      <div style={{ fontFamily: "'Syne', sans-serif", fontSize: 17, fontWeight: 800, color: s.color }}>{s.label}</div>
+                      <div style={{ fontSize: 10, color: "#475569", marginTop: 2 }}>
+                        {s.examDate.toLocaleDateString("en-GB", { day: "numeric", month: "short" })} · {daysLeft}d left
+                      </div>
+                    </div>
+                    <div style={{ textAlign: "right" }}>
+                      <div style={{ fontSize: 26, fontWeight: 500, color: s.color, lineHeight: 1 }}>
+                        {done.toFixed(1)}<span style={{ fontSize: 12, color: "#475569" }}>h</span>
+                      </div>
+                      <div style={{ fontSize: 10, color: "#475569" }}>of {s.target}h</div>
+                    </div>
+                  </div>
+
+                  <div style={{ background: "#0a0f1e", borderRadius: 4, height: 6, marginBottom: 12, overflow: "hidden" }}>
+                    <div style={{
+                      width: `${pct}%`, height: "100%",
+                      background: `linear-gradient(90deg, ${s.dim}, ${s.color})`,
+                      borderRadius: 4, transition: "width 0.6s ease",
+                    }} />
+                  </div>
+
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8 }}>
+                    {[
+                      { label: "PACE", val: `${delta >= 0 ? "+" : ""}${delta.toFixed(1)}h`, sub: delta >= 0 ? "ahead" : "behind", color: delta >= 0 ? "#34d399" : "#f87171" },
+                      { label: "LEFT", val: `${remaining.toFixed(1)}h`, sub: `${pct.toFixed(0)}% done`, color: "#e2e8f0" },
+                      { label: "NEED/WK", val: `${neededPerWeek.toFixed(1)}h`, sub: `plan: ${WEEKLY_RATE[s.id]}h`, color: neededPerWeek > WEEKLY_RATE[s.id] ? "#f87171" : "#34d399" },
+                    ].map(({ label, val, sub, color }) => (
+                      <div key={label} style={{ background: "#0a0f1e", borderRadius: 8, padding: "10px 10px" }}>
+                        <div style={{ fontSize: 9, color: "#475569", marginBottom: 4, letterSpacing: "0.08em" }}>{label}</div>
+                        <div style={{ fontSize: 15, fontWeight: 500, color }}>{val}</div>
+                        <div style={{ fontSize: 9, color: "#334155", marginTop: 2 }}>{sub}</div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              );
+            })}
+
+            {/* Workout */}
+            <div className="card" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <div>
+                <div style={{ fontSize: 13, color: "#e2e8f0" }}>💪 Workouts</div>
+                <div style={{ fontSize: 10, color: "#475569", marginTop: 3 }}>45min · 5 days/week</div>
+              </div>
+              <div style={{ textAlign: "right" }}>
+                <div style={{ fontSize: 26, fontWeight: 500, color: "#34d399" }}>{workoutDays}</div>
+                <div style={{ fontSize: 10, color: "#475569" }}>sessions</div>
+              </div>
+            </div>
+          </>
+        )}
+
+        {/* ─── HISTORY ─── */}
+        {activeTab === "history" && (
+          <>
+            <div style={{ color: "#334155", fontSize: 11, letterSpacing: "0.1em", marginBottom: 14 }}>DAILY LOG</div>
+
+            {Object.keys(logs).length === 0 ? (
+              <div className="card" style={{ textAlign: "center", color: "#334155", padding: 40 }}>
+                No sessions logged yet.
+              </div>
+            ) : (
+              Object.entries(logs)
+                .sort(([a], [b]) => b.localeCompare(a))
+                .map(([date, entry]) => {
+                  const total = SUBJECTS.reduce((s, sub) => s + (parseFloat(entry[sub.id]) || 0), 0);
+                  const d = new Date(date + "T12:00:00");
+                  const didWorkout = workout[date];
+                  const workoutScheduled = !NO_WORKOUT_DAYS.includes(d.getDay());
+
+                  return (
+                    <div key={date} className="card" style={{ padding: "14px 16px" }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+                        <div style={{ fontSize: 13, color: "#94a3b8" }}>
+                          {d.toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" })}
+                        </div>
+                        <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+                          {workoutScheduled && (
+                            <span style={{ fontSize: 11, color: didWorkout ? "#34d399" : "#334155" }}>
+                              {didWorkout ? "💪" : "○"} workout
+                            </span>
+                          )}
+                          <span style={{ fontSize: 14, fontWeight: 500, color: "#e2e8f0" }}>{total.toFixed(1)}h</span>
+                        </div>
+                      </div>
+                      <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                        {SUBJECTS.map(s => {
+                          const h = parseFloat(entry[s.id]) || 0;
+                          if (!h) return null;
+                          return (
+                            <span key={s.id} className="pill" style={{ background: s.dim, color: s.color }}>
+                              {s.label} {h}h
+                            </span>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  );
+                })
+            )}
+
+            {Object.keys(logs).length > 0 && (
+              <div className="card" style={{ background: "#0a0f1e" }}>
+                <div style={{ fontSize: 10, color: "#475569", letterSpacing: "0.1em", marginBottom: 12 }}>ALL-TIME</div>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 8 }}>
+                  {SUBJECTS.map(s => (
+                    <div key={s.id} style={{ textAlign: "center" }}>
+                      <div style={{ fontSize: 18, fontWeight: 500, color: s.color }}>{getTotalHours(s.id).toFixed(1)}<span style={{ fontSize: 10 }}>h</span></div>
+                      <div style={{ fontSize: 10, color: "#475569" }}>{s.label}</div>
+                      <div style={{ fontSize: 9, color: "#334155" }}>/{s.target}h</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
