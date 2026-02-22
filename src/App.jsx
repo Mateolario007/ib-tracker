@@ -1,26 +1,26 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 
 const START_DATE = new Date("2026-02-22");
 
 const SUBJECTS = [
   { id: "math",    label: "Math",    target: 250, examDate: new Date("2026-05-14"), color: "#60a5fa", dim: "#1e3a5f" },
-  { id: "physics", label: "Physics", target: 50,  examDate: new Date("2026-04-28"), color: "#34d399", dim: "#0f3328" },
+  { id: "physics", label: "Physics", target: 100, examDate: new Date("2026-04-28"), color: "#34d399", dim: "#0f3328" },
   { id: "econ",    label: "Econ",    target: 50,  examDate: new Date("2026-05-12"), color: "#fbbf24", dim: "#3d2d00" },
   { id: "english", label: "English", target: 15,  examDate: new Date("2026-05-07"), color: "#f87171", dim: "#3d0f0f" },
 ];
 
-const WEEKLY_RATE = { math: 22, physics: 4, econ: 5, english: 1.5 };
+const WEEKLY_RATE = { math: 15, physics: 10.8, econ: 5, english: 1.5 };
 const NO_WORKOUT_DAYS = [1, 3]; // Mon, Wed = heavy study days
 
 // Daily targets per subject by day (0=Sun,1=Mon,2=Tue,3=Wed,4=Thu,5=Fri,6=Sat)
 const DAILY_TARGETS = {
-  0: { math: 3.0, physics: 1.0, econ: 1.0, english: 1.0 },  // Sun
-  1: { math: 3.5, physics: 0.75, econ: 0,   english: 0 },    // Mon
-  2: { math: 3.0, physics: 0,    econ: 1.0,  english: 0 },   // Tue
-  3: { math: 3.5, physics: 0.75, econ: 0,    english: 0 },   // Wed
-  4: { math: 3.0, physics: 0,    econ: 1.0,  english: 0 },   // Thu
-  5: { math: 2.5, physics: 0,    econ: 0.5,  english: 0.5 }, // Fri
-  6: { math: 3.0, physics: 1.5,  econ: 1.5,  english: 0 },   // Sat
+  0: { math: 2.0, physics: 2.0, econ: 1.0, english: 1.0 },  // Sun
+  1: { math: 2.0, physics: 2.25, econ: 0,   english: 0 },   // Mon
+  2: { math: 2.0, physics: 1.0,  econ: 1.0, english: 0 },   // Tue
+  3: { math: 2.0, physics: 2.25, econ: 0,   english: 0 },   // Wed
+  4: { math: 2.0, physics: 1.0,  econ: 1.0, english: 0 },   // Thu
+  5: { math: 2.0, physics: 1.0,  econ: 0.5, english: 0.5 }, // Fri
+  6: { math: 2.0, physics: 2.0,  econ: 1.5, english: 0 },   // Sat
 };
 
 function weeksElapsed() {
@@ -88,6 +88,58 @@ export default function App() {
   const weeksGone = weeksElapsed();
   const workoutDays = Object.values(workout).filter(Boolean).length;
 
+  // ── Timer state ──
+  const FOCUS_SECS = 90 * 60;
+  const BREAK_SECS = 20 * 60;
+  const [timerSubject, setTimerSubject] = useState("math");
+  const [timerMode, setTimerMode] = useState("idle");
+  const [timeLeft, setTimeLeft] = useState(FOCUS_SECS);
+  const [running, setRunning] = useState(false);
+  const [blocksToday, setBlocksToday] = useState(0);
+  const intervalRef = useRef(null);
+
+  useEffect(() => {
+    if (running && timeLeft > 0) {
+      intervalRef.current = setInterval(() => setTimeLeft(t => t - 1), 1000);
+    } else if (running && timeLeft === 0) {
+      if (timerMode === "focus") {
+        const key = todayKey();
+        const entry = { ...logs[key] };
+        entry[timerSubject] = (parseFloat(entry[timerSubject]) || 0) + 1.5;
+        const newLogs = { ...logs, [key]: entry };
+        setLogs(newLogs);
+        persist(newLogs, workout);
+        setBlocksToday(b => b + 1);
+        setTimerMode("break");
+        setTimeLeft(BREAK_SECS);
+        setRunning(true);
+        if (navigator.vibrate) navigator.vibrate([400, 200, 400]);
+      } else if (timerMode === "break") {
+        setTimerMode("done");
+        setRunning(false);
+        if (navigator.vibrate) navigator.vibrate([200, 100, 200, 100, 200]);
+      }
+    }
+    return () => clearInterval(intervalRef.current);
+  }, [running, timeLeft, timerMode]);
+
+  function startFocus() { setTimerMode("focus"); setTimeLeft(FOCUS_SECS); setRunning(true); }
+  function startBreak() { setTimerMode("break"); setTimeLeft(BREAK_SECS); setRunning(true); }
+  function resetTimer() { setRunning(false); setTimerMode("idle"); setTimeLeft(FOCUS_SECS); }
+  function togglePause() { setRunning(r => !r); }
+
+  function fmtTime(secs) {
+    const m = Math.floor(secs / 60).toString().padStart(2, "0");
+    const s = (secs % 60).toString().padStart(2, "0");
+    return m + ":" + s;
+  }
+
+  function timerPct() {
+    const total = timerMode === "break" ? BREAK_SECS : FOCUS_SECS;
+    return ((total - timeLeft) / total) * 100;
+  }
+
+  const activeSubject = SUBJECTS.find(s => s.id === timerSubject);
   const safeAreaTop = "env(safe-area-inset-top)";
 
   return (
@@ -160,7 +212,7 @@ export default function App() {
           {saved && <span style={{ color: "#34d399", fontSize: 12 }}>✓ SAVED</span>}
         </div>
         <div style={{ display: "flex" }}>
-          {["log", "progress", "history"].map(t => (
+          {["log", "timer", "progress", "history"].map(t => (
             <button key={t} className={`tab-btn ${activeTab === t ? "tab-active" : "tab-inactive"}`}
               onClick={() => setActiveTab(t)}>
               {t.toUpperCase()}
@@ -271,6 +323,114 @@ export default function App() {
                 </button>
               )}
             </div>
+          </>
+        )}
+
+        {/* ─── TIMER ─── */}
+        {activeTab === "timer" && (
+          <>
+            <div style={{ color: "#334155", fontSize: 11, letterSpacing: "0.1em", marginBottom: 14 }}>
+              90 MIN FOCUS · 20 MIN BREAK · {blocksToday} BLOCK{blocksToday !== 1 ? 'S' : ''} TODAY
+            </div>
+
+            {/* Subject picker — only when idle or done */}
+            {(timerMode === "idle" || timerMode === "done") && (
+              <div className="card" style={{ marginBottom: 12 }}>
+                <div style={{ fontSize: 10, color: "#475569", letterSpacing: "0.1em", marginBottom: 12 }}>STUDYING</div>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                  {SUBJECTS.map(s => (
+                    <button key={s.id} onClick={() => setTimerSubject(s.id)} style={{
+                      background: timerSubject === s.id ? s.dim : "#0a0f1e",
+                      border: "1px solid " + (timerSubject === s.id ? s.color : "#1a2744"),
+                      color: timerSubject === s.id ? s.color : "#475569",
+                      borderRadius: 8, padding: "12px", fontFamily: "inherit",
+                      fontSize: 13, cursor: "pointer", transition: "all 0.2s",
+                    }}>{s.label}</button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Clock */}
+            <div className="card" style={{ textAlign: "center", padding: "32px 18px", borderColor: timerMode === "break" ? "#065f46" : timerMode === "focus" ? activeSubject?.dim : "#1a2744" }}>
+              
+              {/* Mode label */}
+              <div style={{ fontSize: 11, letterSpacing: "0.15em", color: timerMode === "break" ? "#34d399" : timerMode === "focus" ? activeSubject?.color : "#475569", marginBottom: 8 }}>
+                {timerMode === "idle" ? "READY" : timerMode === "focus" ? (activeSubject?.label + " · FOCUS") : timerMode === "break" ? "BREAK · GO WALK" : "BLOCK DONE"}
+              </div>
+
+              {/* Big time */}
+              <div style={{
+                fontSize: 72, fontWeight: 300, letterSpacing: "0.05em", lineHeight: 1,
+                color: timerMode === "break" ? "#34d399" : timerMode === "focus" ? activeSubject?.color : "#e2e8f0",
+                fontVariantNumeric: "tabular-nums",
+              }}>
+                {timerMode === "done" ? "✓" : fmtTime(timeLeft)}
+              </div>
+
+              {/* Progress arc bar */}
+              {timerMode !== "idle" && timerMode !== "done" && (
+                <div style={{ margin: "20px auto 0", maxWidth: 280, background: "#0a0f1e", borderRadius: 4, height: 4, overflow: "hidden" }}>
+                  <div style={{
+                    width: timerPct() + "%", height: "100%",
+                    background: timerMode === "break" ? "#34d399" : activeSubject?.color,
+                    borderRadius: 4, transition: "width 1s linear",
+                  }} />
+                </div>
+              )}
+
+              {timerMode === "done" && (
+                <div style={{ color: "#34d399", fontSize: 13, marginTop: 12 }}>
+                  Break over — ready for another block?
+                </div>
+              )}
+              {timerMode === "break" && (
+                <div style={{ color: "#475569", fontSize: 12, marginTop: 16 }}>
+                  Step away from your desk 🚶 · 1.5h logged to {activeSubject?.label}
+                </div>
+              )}
+            </div>
+
+            {/* Controls */}
+            <div style={{ display: "flex", gap: 10 }}>
+              {timerMode === "idle" && (
+                <button className="log-btn" onClick={startFocus}>START 90 MIN BLOCK</button>
+              )}
+              {(timerMode === "focus" || timerMode === "break") && (
+                <>
+                  <button onClick={togglePause} style={{
+                    flex: 1, background: "#1e293b", color: "#e2e8f0", border: "1px solid #334155",
+                    borderRadius: 10, padding: 14, fontFamily: "inherit", fontSize: 14, cursor: "pointer",
+                  }}>{running ? "PAUSE" : "RESUME"}</button>
+                  <button onClick={resetTimer} style={{
+                    background: "transparent", color: "#475569", border: "1px solid #1e293b",
+                    borderRadius: 10, padding: "14px 18px", fontFamily: "inherit", fontSize: 14, cursor: "pointer",
+                  }}>✕</button>
+                </>
+              )}
+              {timerMode === "done" && (
+                <>
+                  <button className="log-btn" onClick={startFocus} style={{ flex: 1 }}>ANOTHER BLOCK</button>
+                  <button onClick={resetTimer} style={{
+                    background: "transparent", color: "#475569", border: "1px solid #1e293b",
+                    borderRadius: 10, padding: "14px 18px", fontFamily: "inherit", fontSize: 14, cursor: "pointer",
+                  }}>DONE</button>
+                </>
+              )}
+            </div>
+
+            {/* Info cards */}
+            {timerMode === "idle" && (
+              <div style={{ marginTop: 14 }}>
+                <div className="card" style={{ padding: "14px 16px" }}>
+                  <div style={{ fontSize: 11, color: "#475569", marginBottom: 6 }}>HOW IT WORKS</div>
+                  <div style={{ fontSize: 12, color: "#64748b", lineHeight: 1.7 }}>
+                    90 min focus → timer auto-logs 1.5h to your subject → 20 min walk break → repeat.<br/>
+                    Your phone will vibrate when each phase ends.
+                  </div>
+                </div>
+              </div>
+            )}
           </>
         )}
 
