@@ -12,6 +12,17 @@ const SUBJECTS = [
 const WEEKLY_RATE = { math: 22, physics: 4, econ: 5, english: 1.5 };
 const NO_WORKOUT_DAYS = [1, 3]; // Mon, Wed = heavy study days
 
+// Daily targets per subject by day (0=Sun,1=Mon,2=Tue,3=Wed,4=Thu,5=Fri,6=Sat)
+const DAILY_TARGETS = {
+  0: { math: 3.0, physics: 1.0, econ: 1.0, english: 1.0 },  // Sun
+  1: { math: 3.5, physics: 0.75, econ: 0,   english: 0 },    // Mon
+  2: { math: 3.0, physics: 0,    econ: 1.0,  english: 0 },   // Tue
+  3: { math: 3.5, physics: 0.75, econ: 0,    english: 0 },   // Wed
+  4: { math: 3.0, physics: 0,    econ: 1.0,  english: 0 },   // Thu
+  5: { math: 2.5, physics: 0,    econ: 0.5,  english: 0.5 }, // Fri
+  6: { math: 3.0, physics: 1.5,  econ: 1.5,  english: 0 },   // Sat
+};
+
 function weeksElapsed() {
   return Math.max(0, (Date.now() - START_DATE.getTime()) / (1000 * 60 * 60 * 24 * 7));
 }
@@ -169,14 +180,40 @@ export default function App() {
 
             {/* Today mini-summary */}
             <div className="card">
-              <div style={{ fontSize: 10, color: "#475569", letterSpacing: "0.1em", marginBottom: 10 }}>TODAY SO FAR</div>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 8 }}>
+              <div style={{ fontSize: 10, color: "#475569", letterSpacing: "0.1em", marginBottom: 12 }}>TODAY SO FAR</div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
                 {SUBJECTS.map(s => {
-                  const h = parseFloat(logs[todayKey()]?.[s.id]) || 0;
+                  const done = parseFloat(logs[todayKey()]?.[s.id]) || 0;
+                  const target = DAILY_TARGETS[new Date().getDay()][s.id];
+                  const pct = target > 0 ? Math.min(100, (done / target) * 100) : 100;
+                  const remaining = Math.max(0, target - done);
+                  const complete = done >= target && target > 0;
+                  if (target === 0 && done === 0) return null;
                   return (
-                    <div key={s.id} style={{ textAlign: "center" }}>
-                      <div style={{ fontSize: 20, fontWeight: 500, color: s.color }}>{h.toFixed(1)}<span style={{ fontSize: 11 }}>h</span></div>
-                      <div style={{ fontSize: 10, color: "#475569" }}>{s.label}</div>
+                    <div key={s.id}>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 5 }}>
+                        <div style={{ fontSize: 12, color: s.color }}>{s.label}</div>
+                        <div style={{ display: "flex", gap: 8, alignItems: "baseline" }}>
+                          {target > 0 && !complete && (
+                            <span style={{ fontSize: 10, color: "#475569" }}>{remaining % 1 === 0 ? remaining : remaining.toFixed(2).replace(/0+$/, "")}h left</span>
+                          )}
+                          {complete && (
+                            <span style={{ fontSize: 10, color: "#34d399" }}>✓ done</span>
+                          )}
+                          <span style={{ fontSize: 14, fontWeight: 500, color: complete ? "#34d399" : "#e2e8f0" }}>
+                            {done.toFixed(1)}<span style={{ fontSize: 10, color: "#475569" }}>/{target > 0 ? target : "—"}h</span>
+                          </span>
+                        </div>
+                      </div>
+                      {target > 0 && (
+                        <div style={{ background: "#0a0f1e", borderRadius: 3, height: 4, overflow: "hidden" }}>
+                          <div style={{
+                            width: `${pct}%`, height: "100%",
+                            background: complete ? "#34d399" : s.color,
+                            borderRadius: 3, transition: "width 0.4s ease",
+                          }} />
+                        </div>
+                      )}
                     </div>
                   );
                 })}
